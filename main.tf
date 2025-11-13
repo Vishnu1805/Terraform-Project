@@ -120,9 +120,9 @@ resource "aws_instance" "web_server" {
               sudo yum install -y git nodejs npm
               cd /home/ec2-user
               git clone https://github.com/Vishnu1805/TASK-MANAGER.git
-              cd app
-              npm install
-              npx expo start
+              cd TASK-MANAGER
+              sudo npm install
+              sud0 npx expo start
               EOF
 
   tags = {
