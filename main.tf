@@ -1,39 +1,70 @@
-
 ############################
-# 1. NETWORKING (VPC, SUBNET)
+# 1. NETWORKING (VPC, SUBNET, INTERNET)
 ############################
-
 resource "aws_vpc" "web_vpc" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_hostnames = true
-  tags = { Name = "webapp-vpc" }
+  cidr_block = "10.0.0.0/16"
+
+  tags = {
+    Name = "webapp-vpc"
+  }
 }
 
-resource "aws_subnet" "web_subnet" {
-  vpc_id                  = aws_vpc.web_vpc.id
-  cidr_block              = "10.0.1.0/24"
-  map_public_ip_on_launch = true
-  availability_zone       = "${var.aws_region}a"
-  tags = { Name = "webapp-subnet" }
-}
-
+# Internet Gateway
 resource "aws_internet_gateway" "web_igw" {
   vpc_id = aws_vpc.web_vpc.id
-  tags   = { Name = "webapp-igw" }
+
+  tags = {
+    Name = "webapp-igw"
+  }
 }
 
-resource "aws_route_table" "web_route_table" {
+# Public Route Table
+resource "aws_route_table" "web_rt" {
   vpc_id = aws_vpc.web_vpc.id
+
   route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.web_igw.id
   }
-  tags = { Name = "webapp-rt" }
+
+  tags = {
+    Name = "webapp-rt"
+  }
 }
 
-resource "aws_route_table_association" "web_rta" {
-  subnet_id      = aws_subnet.web_subnet.id
-  route_table_id = aws_route_table.web_route_table.id
+# Subnet in AZ 1
+resource "aws_subnet" "subnet_1" {
+  vpc_id                  = aws_vpc.web_vpc.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "ap-south-1a"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "webapp-subnet-1"
+  }
+}
+
+# Subnet in AZ 2
+resource "aws_subnet" "subnet_2" {
+  vpc_id                  = aws_vpc.web_vpc.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "ap-south-1b"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "webapp-subnet-2"
+  }
+}
+
+# Associate subnets with Route Table
+resource "aws_route_table_association" "subnet_1_assoc" {
+  subnet_id      = aws_subnet.subnet_1.id
+  route_table_id = aws_route_table.web_rt.id
+}
+
+resource "aws_route_table_association" "subnet_2_assoc" {
+  subnet_id      = aws_subnet.subnet_2.id
+  route_table_id = aws_route_table.web_rt.id
 }
 
 ############################
@@ -76,9 +107,9 @@ resource "aws_security_group" "web_sg" {
 ############################
 
 resource "aws_instance" "web_server" {
-  ami                         = "ami-0c02fb55956c7d316" # Amazon Linux 2 (ap-south-1)
-  instance_type               = t2.micro
-  subnet_id                   = aws_subnet.web_subnet.id
+  ami                         = "ami-03695d52f0d883f65" # Amazon Linux 2 (ap-south-1)
+  instance_type               = "t2.micro"
+  subnet_id                   = aws_subnet.subnet_1.id
   vpc_security_group_ids      = [aws_security_group.web_sg.id]
   key_name                    = var.key_name
   associate_public_ip_address = true
@@ -102,41 +133,70 @@ resource "aws_instance" "web_server" {
 ############################
 # 4. S3 BUCKET (STATIC FILES)
 ############################
-
-resource "aws_s3_bucket" "static_bucket" {
-  bucket = "webapp-static-${random_id.bucket_suffix.hex}"
-  acl    = "public-read"
-  tags   = { Name = "webapp-static" }
-}
-
 resource "random_id" "bucket_suffix" {
   byte_length = 4
+}
+
+# Create S3 Bucket
+resource "aws_s3_bucket" "static_bucket" {
+  bucket = "webapp-static-${random_id.bucket_suffix.hex}"
+
+  tags = {
+    Name        = "webapp-static"
+    Environment = "dev"
+  }
+}
+
+resource "aws_s3_bucket_ownership_controls" "static_bucket" {
+  bucket = aws_s3_bucket.static_bucket.id
+
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "static_bucket" {
+  bucket = aws_s3_bucket.static_bucket.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+resource "aws_s3_bucket_acl" "static_bucket_acl" {
+  depends_on = [
+    aws_s3_bucket_ownership_controls.static_bucket,
+    aws_s3_bucket_public_access_block.static_bucket
+  ]
+  bucket = aws_s3_bucket.static_bucket.id
+  acl    = "public-read"
 }
 
 ############################
 # 5. RDS (MYSQL DATABASE)
 ############################
 
-resource "aws_db_instance" "web_db" {
-  allocated_storage    = 20
-  engine               = "mysql"
-  engine_version       = "8.0"
-  instance_class       = "db.t3.micro"
-  db_name              = "webappdb"
-  username             = "admin"
-  password             = var.db_password
-  publicly_accessible  = false
-  skip_final_snapshot  = true
-  vpc_security_group_ids = [aws_security_group.web_sg.id]
-  db_subnet_group_name = aws_db_subnet_group.web_db_subnet_group.name
-
-  tags = { Name = "webapp-db" }
-}
-
 resource "aws_db_subnet_group" "web_db_subnet_group" {
   name       = "web-db-subnet-group"
-  subnet_ids = [aws_subnet.web_subnet.id]
+  subnet_ids = [aws_subnet.subnet_1.id, aws_subnet.subnet_2.id]
   tags       = { Name = "webapp-db-subnet-group" }
+}
+
+resource "aws_db_instance" "web_db" {
+  allocated_storage       = 20
+  engine                  = "mysql"
+  engine_version          = "8.0"
+  instance_class          = "db.t3.micro"
+  db_name                 = "webappdb"
+  username                = "admin"
+  password                = var.db_password
+  publicly_accessible     = false
+  skip_final_snapshot     = true
+  vpc_security_group_ids  = [aws_security_group.web_sg.id]
+  db_subnet_group_name    = aws_db_subnet_group.web_db_subnet_group.name
+
+  tags = { Name = "webapp-db" }
 }
 
 ############################
@@ -148,21 +208,46 @@ resource "aws_lb" "web_alb" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.web_sg.id]
-  subnets            = [aws_subnet.web_subnet.id]
-  tags = { Name = "webapp-alb" }
+  subnets            = [
+    aws_subnet.subnet_1.id,
+    aws_subnet.subnet_2.id
+  ]
+
+  enable_deletion_protection = false
+
+  tags = {
+    Name = "webapp-alb"
+  }
 }
 
 resource "aws_lb_target_group" "web_tg" {
-  name     = "webapp-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.web_vpc.id
+  name        = "webapp-tg"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.web_vpc.id
+  target_type = "instance"
+
+  health_check {
+    path                = "/"
+    port                = "80"
+    protocol            = "HTTP"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 3
+    unhealthy_threshold = 2
+    matcher             = "200-399"
+  }
+
+  tags = {
+    Name = "webapp-tg"
+  }
 }
 
 resource "aws_lb_listener" "web_listener" {
   load_balancer_arn = aws_lb.web_alb.arn
   port              = 80
   protocol          = "HTTP"
+
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.web_tg.arn
