@@ -131,7 +131,7 @@ resource "aws_instance" "web_server" {
               git clone https://github.com/Vishnu1805/TASK-MANAGER.git
               cd TASK-MANAGER
               sudo npm install
-              sud0 npx expo start
+              sudo npx expo start
               EOF
 
   tags = {
