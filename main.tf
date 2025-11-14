@@ -123,16 +123,34 @@ resource "aws_instance" "web_server" {
   key_name                    = var.key_name
   associate_public_ip_address = true
 
-  user_data = <<-EOF
-              #!/bin/bash
-              sudo yum update -y
-              sudo yum install -y git nodejs npm
-              cd /home/ec2-user
-              git clone https://github.com/Vishnu1805/TASK-MANAGER.git
-              cd TASK-MANAGER
-              sudo npm install
-              sudo npx expo start
-              EOF
+user_data = <<-EOF
+#!/bin/bash
+yum update -y
+
+# Install dependencies
+yum install -y git nodejs npm
+
+# Clone your repo
+cd /home/ec2-user
+git clone https://github.com/Vishnu1805/TASK-MANAGER.git
+cd TASK-MANAGER
+
+npm install
+
+# Build the Expo web app
+npx expo export:web
+
+# Install NGINX
+amazon-linux-extras install nginx1 -y
+
+# Replace NGINX default content with web build
+rm -rf /usr/share/nginx/html/*
+cp -r dist/* /usr/share/nginx/html/
+
+# Start NGINX
+systemctl enable nginx
+systemctl start nginx
+EOF
 
   tags = {
     Name = "webapp-ec2"
