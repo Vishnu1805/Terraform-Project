@@ -130,26 +130,35 @@ yum update -y
 # Install dependencies
 yum install -y git nodejs npm
 
-# Clone your repo
+#!/bin/bash
+
+# Step 1: Clone the repository
 cd /home/ec2-user
 git clone https://github.com/Vishnu1805/TASK-MANAGER.git
 cd TASK-MANAGER
 
+# Step 2: Install Node.js dependencies
 npm install
 
-# Build the Expo web app
-npx expo export:web
+# Step 3: Build the Expo web app
+sudo npx expo export --platform web
 
-# Install NGINX
-amazon-linux-extras install nginx1 -y
+# Step 4: Install NGINX
+sudo dnf install nginx -y  
 
-# Replace NGINX default content with web build
-rm -rf /usr/share/nginx/html/*
-cp -r dist/* /usr/share/nginx/html/
+# Step 5: Remove default NGINX content and copy web build files
+sudo rm -rf /usr/share/nginx/html/*      
+sudo cp -r dist/* /usr/share/nginx/html/ 
 
-# Start NGINX
-systemctl enable nginx
-systemctl start nginx
+# Step 6: Restart NGINX to apply changes
+sudo systemctl restart nginx
+
+# Step 7: Enable and start NGINX
+sudo systemctl enable nginx
+sudo systemctl start nginx
+
+# Step 8: Check NGINX status
+sudo systemctl status nginx
 EOF
 
   tags = {
